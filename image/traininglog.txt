@@ -1,0 +1,55 @@
+欧拉-丸山法
+
+root@autodl-container-7ee347b08d-5d883a4e:~/.ipython# python train_mnist.py --sampling_method euler_maruyama
+2025-05-21 15:54:30.125412      folder path: ~/.saved/sde-flow/default/mnist-True-False-64-0.0001-10000
+2025-05-21 15:54:30.125609      Namespace(dataset='mnist', dataroot='~/.datasets', saveroot='~/.saved', expname='default', print_every=500, sample_every=500, checkpoint_every=1000, num_steps=1000, T0=1.0, vtype='rademacher', batch_size=64, test_batch_size=256, lr=0.0001, num_iterations=10000, sampling_method='euler_maruyama', real=True, debias=False)
+2025-05-21 15:54:30.739910      Iteration 1     Loss 364.768798828125
+2025-05-21 15:54:45.124512      Iteration 500   Loss 26.196598052978516
+2025-05-21 15:55:06.541713      Iteration 1000  Loss 12.403268814086914
+2025-05-21 15:55:28.356755      Iteration 1500  Loss 14.15683364868164
+2025-05-21 15:55:49.971335      Iteration 2000  Loss 10.235519409179688
+2025-05-21 15:56:11.276747      Iteration 2500  Loss 17.274864196777344
+2025-05-21 15:56:32.688262      Iteration 3000  Loss 13.259124755859375
+2025-05-21 15:56:54.769622      Iteration 3500  Loss 11.17567253112793
+2025-05-21 15:57:16.568761      Iteration 4000  Loss 8.819930076599121
+2025-05-21 15:57:38.658878      Iteration 4500  Loss 10.153470993041992
+2025-05-21 15:58:00.724008      Iteration 5000  Loss 7.199159622192383
+2025-05-21 15:58:23.028651      Iteration 5500  Loss 5.232137680053711
+2025-05-21 15:58:44.605638      Iteration 6000  Loss 8.040340423583984
+2025-05-21 15:59:06.678628      Iteration 6500  Loss 6.662957191467285
+2025-05-21 15:59:28.391581      Iteration 7000  Loss 10.843620300292969
+2025-05-21 15:59:50.516981      Iteration 7500  Loss 6.442831993103027
+2025-05-21 16:00:12.230367      Iteration 8000  Loss 8.546550750732422
+2025-05-21 16:00:34.038950      Iteration 8500  Loss 6.6180315017700195
+2025-05-21 16:00:55.268765      Iteration 9000  Loss 7.337393283843994
+2025-05-21 16:01:17.371766      Iteration 9500  Loss 6.133995056152344
+2025-05-21 16:01:39.048829      Iteration 10000         Loss 5.055349826812744
+2025-05-21 16:01:39.049123      Finished training
+
+随机化欧拉法
+
+root@autodl-container-7ee347b08d-5d883a4e:~/.ipython# python train_mnist.py --sampling_method stochastic_euler
+2025-05-21 16:09:57.293499      folder path: ~/.saved/sde-flow/default/mnist-True-False-64-0.0001-10000
+2025-05-21 16:09:57.293682      Namespace(dataset='mnist', dataroot='~/.datasets', saveroot='~/.saved', expname='default', print_every=500, sample_every=500, checkpoint_every=1000, num_steps=1000, T0=1.0, vtype='rademacher', batch_size=64, test_batch_size=256, lr=0.0001, num_iterations=10000, sampling_method='stochastic_euler', real=True, debias=False)
+2025-05-21 16:09:57.913925      Iteration 1     Loss 379.1834716796875
+2025-05-21 16:10:11.954714      Iteration 500   Loss 21.699249267578125
+2025-05-21 16:10:33.576093      Iteration 1000  Loss 24.679340362548828
+2025-05-21 16:10:55.051028      Iteration 1500  Loss 12.653071403503418
+2025-05-21 16:11:16.190690      Iteration 2000  Loss 12.004022598266602
+2025-05-21 16:11:37.351194      Iteration 2500  Loss 11.595112800598145
+2025-05-21 16:11:58.486443      Iteration 3000  Loss 8.82236099243164
+2025-05-21 16:12:21.143469      Iteration 3500  Loss 12.112838745117188
+2025-05-21 16:12:42.994133      Iteration 4000  Loss 11.556002616882324
+2025-05-21 16:13:04.663330      Iteration 4500  Loss 9.128107070922852
+2025-05-21 16:13:26.948284      Iteration 5000  Loss 4.939244270324707
+2025-05-21 16:13:47.928636      Iteration 5500  Loss 5.2237229347229
+2025-05-21 16:14:09.122699      Iteration 6000  Loss 11.37858772277832
+2025-05-21 16:14:30.194231      Iteration 6500  Loss 6.864109039306641
+2025-05-21 16:14:51.198759      Iteration 7000  Loss 10.345600128173828
+2025-05-21 16:15:12.414052      Iteration 7500  Loss 6.085914134979248
+2025-05-21 16:15:33.308343      Iteration 8000  Loss 4.918601036071777
+2025-05-21 16:15:54.951831      Iteration 8500  Loss 6.458644390106201
+2025-05-21 16:16:16.381220      Iteration 9000  Loss 6.396258354187012
+2025-05-21 16:16:37.919413      Iteration 9500  Loss 9.296939849853516
+2025-05-21 16:16:58.662483      Iteration 10000         Loss 7.109002113342285
+2025-05-21 16:16:58.662975      Finished training
