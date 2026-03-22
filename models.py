@@ -1,10 +1,14 @@
 # 模型定义
+# UNet：输入「当前带噪图像 x」与「连续时间 temp」，输出与图像同形状的向量场，用作 PluginReverseSDE 中的 a(x,t)。
+# 结构：编码器下采样提特征 → 瓶颈 → 解码器上采样并与 skip 拼接（经典 U-Net）。
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 class UNet(nn.Module):
+    """时间条件的 2D U-Net，用于 MNIST 等单通道小图；temp 通常与扩散时间 t∈[0,1] 对应。"""
+
     def __init__(self,
                  input_channels,
                  input_height,
@@ -16,7 +20,7 @@ class UNet(nn.Module):
                  dropout=0.,
                  resamp_with_conv=True,
                  act=nn.SiLU(),
-                 num_groups=32,  # 修改：使用 num_groups 替代固定的 normalize
+                 num_groups=32,  # GroupNorm 分组数，需整除各层通道数
                  ):
         super().__init__()
         self.input_channels = input_channels
@@ -25,16 +29,18 @@ class UNet(nn.Module):
         self.output_channels = output_channels = input_channels if output_channels is None else output_channels
         self.ch_mult = ch_mult
         self.num_res_blocks = num_res_blocks
+        # 仅当特征图边长属于该元组时插入 SelfAttention（如 16 表示 16×16 特征图上做注意力）
         self.attn_resolutions = attn_resolutions
         self.dropout = dropout
         self.resamp_with_conv = resamp_with_conv
         self.act = act
-        self.num_groups = num_groups  # 修改：保存 num_groups
+        self.num_groups = num_groups
 
         self.num_resolutions = num_resolutions = len(ch_mult)
         in_ht = input_height
         in_ch = input_channels
         temb_ch = ch * 4
+        # 多次 /2 下采样后高宽仍为整数
         assert in_ht % 2 ** (num_resolutions - 1) == 0, "input_height doesn't satisfy the condition"
 
         self.temb_net = TimestepEmbedding(
@@ -45,7 +51,7 @@ class UNet(nn.Module):
         )
 
         self.begin_conv = nn.Conv2d(in_ch, ch, kernel_size=3, padding=1)
-        unet_chs = [ch]
+        unet_chs = [ch]  # 记录各尺度通道，供解码阶段 concat skip
         in_ht = in_ht
         in_ch = ch
         down_modules = []
@@ -60,10 +66,10 @@ class UNet(nn.Module):
                         out_ch=out_ch,
                         dropout=dropout,
                         act=act,
-                        num_groups=num_groups,  # 修改：传递 num_groups
+                        num_groups=num_groups,
                     )
                 if in_ht in attn_resolutions:
-                    block_modules[f'{i_level}a_{i_block}b_attn'] = SelfAttention(out_ch, num_groups=num_groups)  # 修改
+                    block_modules[f'{i_level}a_{i_block}b_attn'] = SelfAttention(out_ch, num_groups=num_groups)
                 unet_chs += [out_ch]
                 in_ch = out_ch
             if i_level != num_resolutions - 1:
@@ -75,10 +81,10 @@ class UNet(nn.Module):
 
         mid_modules = []
         mid_modules += [
-            ResidualBlock(in_ch, temb_ch=temb_ch, out_ch=in_ch, dropout=dropout, act=act, num_groups=num_groups)]  # 修改
-        mid_modules += [SelfAttention(in_ch, num_groups=num_groups)]  # 修改
+            ResidualBlock(in_ch, temb_ch=temb_ch, out_ch=in_ch, dropout=dropout, act=act, num_groups=num_groups)]
+        mid_modules += [SelfAttention(in_ch, num_groups=num_groups)]
         mid_modules += [
-            ResidualBlock(in_ch, temb_ch=temb_ch, out_ch=in_ch, dropout=dropout, act=act, num_groups=num_groups)]  # 修改
+            ResidualBlock(in_ch, temb_ch=temb_ch, out_ch=in_ch, dropout=dropout, act=act, num_groups=num_groups)]
         self.mid_modules = nn.ModuleList(mid_modules)
 
         up_modules = []
@@ -93,10 +99,10 @@ class UNet(nn.Module):
                         out_ch=out_ch,
                         dropout=dropout,
                         act=act,
-                        num_groups=num_groups,  # 修改
+                        num_groups=num_groups,
                     )
                 if in_ht in attn_resolutions:
-                    block_modules[f'{i_level}a_{i_block}b_attn'] = SelfAttention(out_ch, num_groups=num_groups)  # 修改
+                    block_modules[f'{i_level}a_{i_block}b_attn'] = SelfAttention(out_ch, num_groups=num_groups)
                 in_ch = out_ch
             if i_level != 0:
                 block_modules[f'{i_level}b_upsample'] = upsample(out_ch, with_conv=resamp_with_conv)
@@ -113,6 +119,7 @@ class UNet(nn.Module):
         )
 
     def _compute_cond_module(self, module, x, temp):
+        """瓶颈处若干子模块顺序前向（均吃 temb）。"""
         for m in module:
             x = m(x, temp)
         return x
@@ -120,7 +127,7 @@ class UNet(nn.Module):
     def forward(self, x, temp):
         B, C, H, W = x.size()
 
-        # 确保 temp 是形状为 (B,) 的张量
+        # 时间条件：每条样本一个标量，扩展成 (B,) 与 batch 对齐
         if temp.dim() == 0:
             temp = temp.expand(B)
         elif temp.dim() == 1 and temp.size(0) == 1:
@@ -135,6 +142,7 @@ class UNet(nn.Module):
         assert list(temb.shape) == [B, self.ch * 4]
 
         hs = [self.begin_conv(x)]
+        # 编码：逐层提特征并下采样；hs 供解码跳连
         for i_level in range(self.num_resolutions):
             block_modules = self.down_modules[i_level]
             for i_block in range(self.num_res_blocks):
@@ -151,6 +159,7 @@ class UNet(nn.Module):
         h = hs[-1]
         h = self._compute_cond_module(self.mid_modules, h, temb)
 
+        # 解码：与编码对称，上采样并与 pop 出的 skip 拼接
         for i_idx, i_level in enumerate(reversed(range(self.num_resolutions))):
             block_modules = self.up_modules[i_idx]
             for i_block in range(self.num_res_blocks + 1):
@@ -169,6 +178,8 @@ class UNet(nn.Module):
         return h
 
 class TimestepEmbedding(nn.Module):
+    """将标量时间编码为向量，注入各 ResidualBlock（与扩散模型里「时间嵌入」作用相同）。"""
+
     def __init__(self, embedding_dim, hidden_dim, output_dim, act=nn.SiLU()):
         super().__init__()
         self.embedding_dim = embedding_dim
@@ -176,7 +187,7 @@ class TimestepEmbedding(nn.Module):
         self.output_dim = output_dim
         self.act = act
         
-        # 创建正弦位置编码
+        # 用固定正弦表初始化 Embedding，类似 Transformer 位置编码
         self.time_embedding = nn.Embedding(1000, embedding_dim)
         self.linear_1 = nn.Linear(embedding_dim, hidden_dim)
         self.linear_2 = nn.Linear(hidden_dim, output_dim)
@@ -211,6 +222,8 @@ class TimestepEmbedding(nn.Module):
         return temp
 
 class ResidualBlock(nn.Module):
+    """Conv + GroupNorm 残差块；时间嵌入 temb 经线性层后加到中间特征（DDPM/ADM 类结构常用）。"""
+
     def __init__(self, in_ch, temb_ch, out_ch, dropout, act, num_groups):
         super().__init__()
         self.in_ch = in_ch
@@ -234,6 +247,7 @@ class ResidualBlock(nn.Module):
     def forward(self, x, temb):
         h = self.act(self.norm1(x))
         h = self.conv1(h)
+        # 时间嵌入按通道加到特征图上（广播）
         h += self.temb_proj(self.act(temb))[:, :, None, None]
         h = self.act(self.norm2(h))
         h = nn.Dropout(self.dropout)(h)
@@ -241,6 +255,8 @@ class ResidualBlock(nn.Module):
         return h + self.residual_conv(x)
 
 class SelfAttention(nn.Module):
+    """空间维自注意力：在 H×W 上建立长程依赖；通道压缩为 Q/K 降计算量。"""
+
     def __init__(self, in_channels, num_groups):
         super().__init__()
         self.in_channels = in_channels
@@ -253,6 +269,7 @@ class SelfAttention(nn.Module):
         self.proj_out = nn.Conv2d(in_channels, in_channels, kernel_size=1)
 
     def forward(self, x, temb=None):
+        # temb 仅为与 ResidualBlock 调用签名一致，此处未使用
         h_ = self.normalize(x)
         q = self.q(h_)
         k = self.k(h_)
@@ -262,6 +279,7 @@ class SelfAttention(nn.Module):
         q = q.reshape(b, c, h * w)
         q = q.permute(0, 2, 1)
         k = k.reshape(b, c, h * w)
+        # scaled dot-product attention
         attn = torch.bmm(q, k) * (int(c) ** (-0.5))
         attn = nn.Softmax(dim=2)(attn)
 
@@ -273,12 +291,14 @@ class SelfAttention(nn.Module):
         return x + self.proj_out(a)
 
 def downsample(in_channels, with_conv):
+    """空间尺寸减半：卷积 stride=2 或平均池化。"""
     if with_conv:
         return nn.Conv2d(in_channels, in_channels, kernel_size=3, stride=2, padding=1)
     else:
         return nn.AvgPool2d(2)
 
 def upsample(in_channels, with_conv):
+    """空间尺寸翻倍：转置卷积或最近邻上采样。"""
     if with_conv:
         return nn.ConvTranspose2d(in_channels, in_channels, kernel_size=4, stride=2, padding=1)
     else:
